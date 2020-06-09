@@ -20,6 +20,7 @@ type Config struct {
 	WebhookURI    string `required:"true" split_words:"true"`
 	SendgridToken string `required:"true" split_words:"true"`
 	LastTimestamp int    `default:"-1" split_words:"true"`
+	Port          string `default:"8080" required:"true"`
 }
 
 // SlackWebhookBody represents the JSON body which we send to the Slack Webhook
@@ -116,8 +117,11 @@ func main() {
 	}
 	fmt.Println("Successfully created config")
 
+	go http.ListenAndServe(":"+config.Port, nil)
+
 	// Loop all da time!
 	for range time.Tick(time.Duration(config.Interval) * time.Second) {
 		getBlocks()
 	}
+
 }
