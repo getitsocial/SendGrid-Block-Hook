@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,22 +9,22 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/kelseyhightower/envconfig"
 )
 
-var (
-	discordSession *discordgo.Session
-	config         Config
-)
+var config Config
 
 // Config struct, filled with env variables from our Dockerfile
 type Config struct {
-	Interval         int    `default:"60"`
-	DiscordToken     string `required:"true" split_words:"true"`
-	DiscordChannelID string `required:"true" split_words:"true"`
-	SendgridToken    string `required:"true" split_words:"true"`
-	LastTimestamp    int    `default:"0" split_words:"true"`
+	Interval      int    `default:"5"`
+	WebhookURI    string `required:"true" split_words:"true"`
+	SendgridToken string `required:"true" split_words:"true"`
+	LastTimestamp int    `default:"-1" split_words:"true"`
+}
+
+// SlackWebhookBody represents the JSON body which we send to the Slack Webhook
+type SlackWebhookBody struct {
+	Text string `json:"text"`
 }
 
 // Block is an SendGrid block object as specified in:
@@ -35,12 +36,20 @@ type Block struct {
 	Status  string
 }
 
-// Send a single block to your preferred service, in this case discord:D
+// Send a single block to the slack webhook
 func sendMessage(block Block) {
-	message := fmt.Sprintf("Failed to send mail:\nCreated at: %d\nEmail: %s \nReason: %s\nStatus: %s\n", block.Created, block.Email, block.Reason, block.Status)
-	if _, err := discordSession.ChannelMessageSend(config.DiscordChannelID, message); err != nil {
-		fmt.Printf("Discord Error: %s\n", err.Error())
+
+	date := time.Unix(int64(block.Created), 0).String()
+	message := fmt.Sprintf("Failed to send mail:\nCreated at: %s\nEmail: %s \nReason: %s\nStatus: %s\n", date, block.Email, block.Reason, block.Status)
+
+	s := SlackWebhookBody{Text: message}
+	b, _ := json.Marshal(s)
+	_, err := http.Post(config.WebhookURI, "application/json", bytes.NewBuffer(b))
+
+	if err != nil {
+		fmt.Println(err)
 	}
+
 }
 
 // Iterate through blocks, send your log messages and save new latest timestamp
@@ -106,15 +115,6 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("Successfully created config")
-
-	discordSession, err = discordgo.New("Bot " + config.DiscordToken)
-
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Successfully started Discord bot")
-	discordSession.ChannelMessageSend(config.DiscordChannelID, "Sendgrid block thingy is online!")
 
 	// Loop all da time!
 	for range time.Tick(time.Duration(config.Interval) * time.Second) {
